@@ -181,7 +181,7 @@ export function isSelfHostedRunner() {
     throw new Error('inputs.selfHosted should have been already set')
   }
 
-  return inputs.selfHosted === 'true' ||
+  return inputs.selfHosted === 'true' || getRunnerToolCache() !== getDefaultToolCachePath() ||
     !GitHubHostedPlatforms.includes(getOSNameVersionArch())
 }
 

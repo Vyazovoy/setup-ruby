@@ -541,7 +541,7 @@ function isSelfHostedRunner() {
     throw new Error('inputs.selfHosted should have been already set')
   }
 
-  return inputs.selfHosted === 'true' ||
+  return inputs.selfHosted === 'true' || getRunnerToolCache() !== getDefaultToolCachePath() ||
     !GitHubHostedPlatforms.includes(getOSNameVersionArch())
 }
 
@@ -64980,21 +64980,7 @@ async function install(platform, engine, version) {
     if (inToolCache) {
       rubyPrefix = inToolCache
     } else {
-      const toolCacheRubyPrefix = common.getToolCacheRubyPrefix(platform, engine, version)
-      if (common.isSelfHostedRunner()) {
-        const rubyBuildDefinition = engine === 'ruby' ? version : `${engine}-${version}`
-        core.error(
-          `The current runner (${common.getOSNameVersionArch()}) was detected as self-hosted because ${common.selfHostedRunnerReason()}.\n` +
-          `In such a case, you should install Ruby in the $RUNNER_TOOL_CACHE yourself, for example using https://github.com/rbenv/ruby-build\n` +
-          `You can take inspiration from this workflow for more details: https://github.com/ruby/ruby-builder/blob/master/.github/workflows/build.yml\n` +
-          `$ ruby-build ${rubyBuildDefinition} ${toolCacheRubyPrefix}\n` +
-          `Once that completes successfully, mark it as complete with:\n` +
-          `$ touch ${common.toolCacheCompleteFile(toolCacheRubyPrefix)}\n` +
-          `It is your responsibility to ensure installing Ruby like that is not done in parallel.\n`)
-        process.exit(1)
-      } else {
-        rubyPrefix = toolCacheRubyPrefix
-      }
+      rubyPrefix = common.getToolCacheRubyPrefix(platform, engine, version)
     }
   } else if (windows) {
     rubyPrefix = path.join(`${common.drive}:`, `${engine}-${version}`)
@@ -65007,7 +64993,7 @@ async function install(platform, engine, version) {
 
   if (!inToolCache) {
     await io.mkdirP(rubyPrefix)
-    if (engine === 'truffleruby+graalvm') {
+    if (engine === 'truffleruby+graalvm' || common.isSelfHostedRunner()) {
       await installWithRubyBuild(engine, version, rubyPrefix)
     } else {
       await downloadAndExtract(platform, engine, version, rubyPrefix)
@@ -65030,12 +65016,17 @@ async function installWithRubyBuild(engine, version, rubyPrefix) {
     await exec.exec('git', ['clone', 'https://github.com/rbenv/ruby-build.git', rubyBuildDir])
   })
 
-  const rubyName = `${engine}-${version === 'head' ? 'dev' : version}`
-  await common.measure(`Installing ${engine}-${version} with ruby-build`, async () => {
+  const engineName = engine === 'ruby' ? '' : `${engine}-`
+  const rubyName = `${engineName}${version === 'head' ? 'dev' : version}`
+  await common.measure(`Installing ${rubyName} with ruby-build`, async () => {
     await exec.exec(`${rubyBuildDir}/bin/ruby-build`, [rubyName, rubyPrefix])
   })
 
   await io.rmRF(rubyBuildDir)
+
+  if (common.shouldUseToolCache(engine, version)) {
+    common.createToolCacheCompleteFile(rubyPrefix)
+  }
 }
 
 async function downloadAndExtract(platform, engine, version, rubyPrefix) {
